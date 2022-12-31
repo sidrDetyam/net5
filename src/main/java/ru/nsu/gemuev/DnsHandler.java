@@ -2,8 +2,8 @@ package ru.nsu.gemuev;
 
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.xbill.DNS.*;
 import org.xbill.DNS.Record;
+import org.xbill.DNS.*;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -38,7 +38,7 @@ public class DnsHandler {
                 int id = msg.getHeader().getID();
                 ClientHandler client = clients.get(id);
                 clients.remove(id);
-                client.resolve(adr);
+                client.connectToServer(adr);
                 return;
             }
         }

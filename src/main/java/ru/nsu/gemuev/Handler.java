@@ -10,4 +10,6 @@ public interface Handler extends Closeable {
     void connect();
 
     void accept();
+
+    void close();
 }
