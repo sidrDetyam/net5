@@ -61,8 +61,16 @@ public abstract class AbstractCouplingHandler implements Handler{
         throw new UnsupportedOperationException("bruh");
     }
 
+    void shutdownInput(){
+        isShutdownInput = true;
+    }
+
+    void shutdownOutput(){
+        isShutdownOutput = true;
+    }
+
     public void readToBuffer(){
-        if(buffer.hasRemaining() || isShutdownInput()){
+        if(buffer.hasRemaining()){
             setInputEvent(false);
             partner.setOutputEvent(true);
             return;
@@ -73,10 +81,15 @@ public abstract class AbstractCouplingHandler implements Handler{
             int read_ = channel.read(buffer);
             buffer.flip();
             if(read_ == -1){
-                isShutdownInput = true;
-                channel.shutdownInput();
+                shutdownInput();
+                partner.shutdownOutput();
+                setInputEvent(false);
+                partner.setOutputEvent(false);
             }
-            partner.setOutputEvent(true);
+            else{
+                partner.setOutputEvent(read_ != 0);
+                setInputEvent(read_ == 0);
+            }
         }
         catch (IOException e){
             log.error(e);
@@ -89,16 +102,10 @@ public abstract class AbstractCouplingHandler implements Handler{
         try {
             if (partnerBuffer.hasRemaining()) {
                 channel.write(partnerBuffer);
-                if (!partnerBuffer.hasRemaining()) {
-                    partner.setInputEvent(true);
-                    setOutputEvent(false);
-                }
-            } else {
-                if (partner.isShutdownInput()) {
-                    channel.shutdownOutput();
-                    setOutputEvent(false);
-                    partner.setInputEvent(false);
-                }
+            }
+            if (!partnerBuffer.hasRemaining()) {
+                partner.setInputEvent(true);
+                setOutputEvent(false);
             }
         } catch (IOException e) {
             log.error(e);

@@ -140,6 +140,7 @@ public class ClientHandler extends AbstractCouplingHandler{
             state = State.SENDING_CONNECTION_RESPONSE;
             constructConnectionResponseMessage();
             key.interestOps(SelectionKey.OP_WRITE);
+            serverKey.attach(partner);
         }
         catch (IOException e){
             log.error(e);
@@ -173,8 +174,6 @@ public class ClientHandler extends AbstractCouplingHandler{
             if (!buffer.hasRemaining()) {
                 key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
                 state = State.FORWADING;
-                buffer.clear();
-                buffer.flip();
                 buffer.clear();
                 buffer.flip();
             }

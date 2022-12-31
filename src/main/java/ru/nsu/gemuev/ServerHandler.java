@@ -12,7 +12,8 @@ public class ServerHandler extends AbstractCouplingHandler {
     public ServerHandler(@NonNull SelectionKey serverKey, @NonNull ClientHandler clientHandler) {
         super(serverKey);
         partner = clientHandler;
-        serverKey.interestOps(SelectionKey.OP_READ | SelectionKey.OP_CONNECT | SelectionKey.OP_WRITE);
+        buffer.flip();
+        serverKey.interestOps(SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
     }
 
     @Override

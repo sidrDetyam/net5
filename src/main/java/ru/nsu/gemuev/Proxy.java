@@ -55,6 +55,10 @@ public class Proxy implements Runnable{
                 iter.remove();
                 if(key.isValid()){
                     Handler handler = (Handler) key.attachment();
+                    if(handler == null){
+                        System.out.println("something");
+                    }
+
                     if(key.isAcceptable()){
                         handler.accept();
                     }
