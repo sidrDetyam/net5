@@ -172,7 +172,7 @@ public class ClientHandler extends AbstractCouplingHandler{
         try {
             channel.write(buffer);
             if (!buffer.hasRemaining()) {
-                key.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+                key.interestOps(SelectionKey.OP_READ);
                 state = State.FORWADING;
                 buffer.clear();
                 buffer.flip();

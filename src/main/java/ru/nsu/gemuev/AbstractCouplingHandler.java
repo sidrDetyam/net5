@@ -90,6 +90,10 @@ public abstract class AbstractCouplingHandler implements Handler{
                 partner.setOutputEvent(read_ != 0);
                 setInputEvent(read_ == 0);
             }
+
+            if(isShutdownInput() && isShutdownOutput()){
+                close();
+            }
         }
         catch (IOException e){
             log.error(e);

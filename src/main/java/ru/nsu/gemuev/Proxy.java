@@ -43,6 +43,8 @@ public class Proxy implements Runnable{
         }
     }
 
+    private int counter = 0;
+
     @Override
     @SneakyThrows
     public void run() {
@@ -51,24 +53,25 @@ public class Proxy implements Runnable{
             Set<SelectionKey> keys = selector.selectedKeys();
             Iterator<SelectionKey> iter = keys.iterator();
             while (iter.hasNext()) {
+                ++counter;
                 var key = iter.next();
                 iter.remove();
                 if(key.isValid()){
                     Handler handler = (Handler) key.attachment();
-                    if(handler == null){
-                        System.out.println("something");
-                    }
-
                     if(key.isAcceptable()){
                         handler.accept();
+                        System.out.println(counter + " accept");
                     }
                     else if(key.isConnectable()){
                         handler.connect();
+                        System.out.println(counter + " connect");
                     }
                     else if(key.isReadable()){
+                        System.out.println(counter + " read!");
                         handler.read();
                     }
                     else if(key.isWritable()){
+                        System.out.println(counter + "write!");
                         handler.write();
                     }
                 }

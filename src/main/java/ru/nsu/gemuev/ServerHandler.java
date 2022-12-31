@@ -13,7 +13,7 @@ public class ServerHandler extends AbstractCouplingHandler {
         super(serverKey);
         partner = clientHandler;
         buffer.flip();
-        serverKey.interestOps(SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+        serverKey.interestOps(SelectionKey.OP_READ);
     }
 
     @Override
