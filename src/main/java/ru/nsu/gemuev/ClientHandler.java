@@ -125,6 +125,7 @@ public class ClientHandler implements Handler {
             port = clientInputBuffer.getShort();
 
             state = State.RESOLVING;
+            clientKey.interestOps(0);
             if(addressType == Constants.DNS){
                 dnsHandler.sendRequest(address, this);
             }
@@ -139,53 +140,93 @@ public class ClientHandler implements Handler {
     }
 
     public void connectToServer(@NonNull InetAddress address){
+        checkState(State.RESOLVING);
         var inetSocketAddress = new InetSocketAddress(address, port);
         try {
             SocketChannel serverChannel = SocketChannel.open(inetSocketAddress);
-            serverHandler = new ServerHandler(serverChannel);
-            sendSecondConfirmationMessage();
             serverChannel.configureBlocking(false);
-            var serverKey = serverChannel.register(selector, SelectionKey.OP_READ | SelectionKey.OP_CONNECT);
-            proxyConnection.put(channel, serverChannel);
-            proxyConnection.put(serverChannel, channel);
-            connectionStage.put(serverChannel, Stage.THIRD);
+            var serverKey = serverChannel.register(selector, 0);
+            serverHandler = new ServerHandler(serverKey, this);
+            state = State.SENDING_CONNECTION_RESPONSE;
+            constructConnectionResponseMessage();
+            clientKey.interestOps(SelectionKey.OP_WRITE);
         }
         catch (IOException e){
             log.error(e);
             close();
         }
-        return serverChannel.isConnected();
     }
 
-    @SneakyThrows
-    public void handleSecond() {
-        buffer.clear();
-        SecondParseResult secondMessage = getSecondMessage().orElseThrow();
-        port = secondMessage.getPort();
-        dnsHandler.sendRequest(secondMessage.getAddress(), this);
-        state = State.RESOLVING;
-    }
-
-    public void sendSecondConfirmationMessage() throws IOException {
-        //ByteBuffer message = ByteBuffer.allocate(10);
-        byte[] resultMessage = null;
-        resultMessage = ArrayUtils.addAll(new byte[]{Constants.SOCKS5, Constants.OK, Constants.RESERVED, Constants.IPV4},
+    public void constructConnectionResponseMessage(){
+        checkState(State.SENDING_CONNECTION_RESPONSE);
+        clientOutputBuffer.clear();
+        byte[] resultMessage = ArrayUtils.addAll(new byte[]{Constants.SOCKS5, Constants.OK, Constants.RESERVED, Constants.IPV4},
                 Constants.LOCALHOST);
         resultMessage = ArrayUtils.addAll(resultMessage, (byte) ((port >> 8) & 0xFF), (byte) (port & 0xFF));
-        //message.put(resultMessage);
-        serverHandler.getChannel().write(ByteBuffer.wrap(resultMessage, 0, 10));
+        clientOutputBuffer.put(resultMessage);
+        clientOutputBuffer.flip();
     }
 
-
-    @SneakyThrows
-    public void read() {
-        if (state == State.AWAITING_AUTH_REQUEST) {
-            readAndHandleAuthRequest();
-            return;
+    private void checkState(@NonNull State state){
+        if (this.state != state) {
+            String errorMsg = "Illegal state: expected %s, but found %s"
+                    .formatted(this.state.name(), state.name());
+            log.error(errorMsg);
+            throw new IllegalStateException(errorMsg);
         }
-        if (state == State.AWAITING_CONNECTION_REQUEST) {
-            handleSecond();
-            return;
+    }
+
+    private void sendingConnectionResponseMessage(){
+        checkState(State.SENDING_CONNECTION_RESPONSE);
+        try {
+            clientChannel.write(clientOutputBuffer);
+            if (!clientOutputBuffer.hasRemaining()) {
+                clientKey.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+                state = State.FORWADING;
+                clientInputBuffer.clear();
+                clientOutputBuffer.clear();
+            }
+        } catch (IOException e) {
+            log.error(e);
+            close();
+        }
+    }
+
+    private void readToBuffer(){
+        try {
+            int read_ = clientChannel.read(clientInputBuffer);
+            if(!clientInputBuffer.hasRemaining()){
+                SelectionKeyUtils.turnOffReadOption(clientKey);
+                if(read_ > 0){
+
+                }
+            }
+        }
+        catch (IOException e){
+            log.error(e);
+            close();
+        }
+    }
+
+    public void readFromBuffer(@NonNull ByteBuffer to){
+
+    }
+
+    public void writeToBuffer(@NonNull ByteBuffer from){
+
+    }
+
+    public void writeFromBuffer(){
+
+    }
+
+    @Override
+    public void read() {
+        switch (state){
+            case AWAITING_AUTH_REQUEST -> readAndHandleAuthRequest();
+            case AWAITING_CONNECTION_REQUEST -> readAndHandleConnectionRequest();
+            case FORWADING -> readToBuffer();
+            default -> throw new IllegalStateException("");
         }
     }
 
@@ -196,7 +237,13 @@ public class ClientHandler implements Handler {
 
     @Override
     public void connect() {
-        throw new UnsupportedOperationException("");
+        try {
+            clientChannel.finishConnect();
+        }
+        catch (IOException e){
+            log.error(e);
+            close();
+        }
     }
 
     @Override
@@ -209,7 +256,7 @@ public class ClientHandler implements Handler {
         try {
             clientChannel.close();
             if (serverHandler != null) {
-
+                serverHandler.close();
             }
         } catch (IOException e) {
             log.error(e);
