@@ -1,7 +1,7 @@
 package ru.nsu.gemuev;
 
+import lombok.Getter;
 import lombok.NonNull;
-import lombok.SneakyThrows;
 import lombok.extern.log4j.Log4j2;
 import org.apache.commons.lang3.ArrayUtils;
 
@@ -12,7 +12,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.Optional;
 
 @Log4j2
 public class ClientHandler implements Handler {
@@ -24,9 +23,13 @@ public class ClientHandler implements Handler {
     private State state;
     private short port;
     private ServerHandler serverHandler = null;
+    @Getter
+    private boolean isShutdownInput = false;
 
-    private final ByteBuffer clientInputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
-    private final ByteBuffer clientOutputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
+    @Getter
+    private ByteBuffer inputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
+    @Getter
+    private ByteBuffer outputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
 
 
     public ClientHandler(@NonNull SelectionKey clientKey, @NonNull DnsHandler dnsHandler) {
@@ -39,10 +42,10 @@ public class ClientHandler implements Handler {
     }
 
     private void constructAuthResponse() {
-        clientOutputBuffer.clear();
-        clientOutputBuffer.put(Constants.SOCKS5);
-        clientOutputBuffer.put(Constants.NO_AUTH);
-        clientOutputBuffer.flip();
+        outputBuffer.clear();
+        outputBuffer.put(Constants.SOCKS5);
+        outputBuffer.put(Constants.NO_AUTH);
+        outputBuffer.flip();
     }
 
     private void readAndHandleAuthRequest() {
@@ -50,10 +53,10 @@ public class ClientHandler implements Handler {
             throw new IllegalStateException("");
         }
 
-        clientInputBuffer.clear();
+        inputBuffer.clear();
         int cnt;
         try {
-            cnt = clientChannel.read(clientInputBuffer);
+            cnt = clientChannel.read(inputBuffer);
         } catch (IOException e) {
             log.error(e);
             cnt = -1;
@@ -62,11 +65,11 @@ public class ClientHandler implements Handler {
             close();
             return;
         }
-        clientInputBuffer.flip();
-        byte socksVersion = clientInputBuffer.get();
-        byte methodAmount = clientInputBuffer.get();
+        inputBuffer.flip();
+        byte socksVersion = inputBuffer.get();
+        byte methodAmount = inputBuffer.get();
         byte[] methods = new byte[methodAmount];
-        clientInputBuffer.get(methods);
+        inputBuffer.get(methods);
         if (socksVersion != Constants.SOCKS5 || !ArrayUtils.contains(methods, Constants.NO_AUTH)) {
             close();
             return;
@@ -82,8 +85,8 @@ public class ClientHandler implements Handler {
             throw new IllegalStateException("");
         }
         try {
-            clientChannel.write(clientOutputBuffer);
-            if (!clientOutputBuffer.hasRemaining()) {
+            clientChannel.write(outputBuffer);
+            if (!outputBuffer.hasRemaining()) {
                 clientKey.interestOps(SelectionKey.OP_READ);
                 state = State.AWAITING_CONNECTION_REQUEST;
             }
@@ -98,31 +101,31 @@ public class ClientHandler implements Handler {
             throw new IllegalStateException("");
         }
         try {
-            clientInputBuffer.clear();
-            if (clientChannel.read(clientInputBuffer) == -1) {
+            inputBuffer.clear();
+            if (clientChannel.read(inputBuffer) == -1) {
                 throw new IOException("unexpected EOF");
             }
-            clientInputBuffer.flip();
-            byte socksVersion = clientInputBuffer.get();
-            byte command = clientInputBuffer.get();
-            byte reserved = clientInputBuffer.get();
+            inputBuffer.flip();
+            byte socksVersion = inputBuffer.get();
+            byte command = inputBuffer.get();
+            byte reserved = inputBuffer.get();
             if (socksVersion != Constants.SOCKS5 || command != Constants.TCPIP || reserved != Constants.RESERVED) {
                 throw new IOException("incorrect bruh");
             }
 
-            byte addressType = clientInputBuffer.get();
+            byte addressType = inputBuffer.get();
             byte[] address;
             if (addressType == Constants.IPV4) {
                 address = new byte[4];
-                clientInputBuffer.get(address, 0, 4);
+                inputBuffer.get(address, 0, 4);
             } else if (addressType == Constants.DNS) {
-                int nameLength = clientInputBuffer.get();
+                int nameLength = inputBuffer.get();
                 address = new byte[nameLength];
-                clientInputBuffer.get(address, 0, nameLength);
+                inputBuffer.get(address, 0, nameLength);
             } else {
                 throw new IOException("dkjsnkjsd");
             }
-            port = clientInputBuffer.getShort();
+            port = inputBuffer.getShort();
 
             state = State.RESOLVING;
             clientKey.interestOps(0);
@@ -159,12 +162,12 @@ public class ClientHandler implements Handler {
 
     public void constructConnectionResponseMessage(){
         checkState(State.SENDING_CONNECTION_RESPONSE);
-        clientOutputBuffer.clear();
+        outputBuffer.clear();
         byte[] resultMessage = ArrayUtils.addAll(new byte[]{Constants.SOCKS5, Constants.OK, Constants.RESERVED, Constants.IPV4},
                 Constants.LOCALHOST);
         resultMessage = ArrayUtils.addAll(resultMessage, (byte) ((port >> 8) & 0xFF), (byte) (port & 0xFF));
-        clientOutputBuffer.put(resultMessage);
-        clientOutputBuffer.flip();
+        outputBuffer.put(resultMessage);
+        outputBuffer.flip();
     }
 
     private void checkState(@NonNull State state){
@@ -179,12 +182,14 @@ public class ClientHandler implements Handler {
     private void sendingConnectionResponseMessage(){
         checkState(State.SENDING_CONNECTION_RESPONSE);
         try {
-            clientChannel.write(clientOutputBuffer);
-            if (!clientOutputBuffer.hasRemaining()) {
+            clientChannel.write(outputBuffer);
+            if (!outputBuffer.hasRemaining()) {
                 clientKey.interestOps(SelectionKey.OP_READ | SelectionKey.OP_WRITE);
                 state = State.FORWADING;
-                clientInputBuffer.clear();
-                clientOutputBuffer.clear();
+                inputBuffer.clear();
+                inputBuffer.flip();
+                outputBuffer.clear();
+                outputBuffer.flip();
             }
         } catch (IOException e) {
             log.error(e);
@@ -192,15 +197,40 @@ public class ClientHandler implements Handler {
         }
     }
 
-    private void readToBuffer(){
-        try {
-            int read_ = clientChannel.read(clientInputBuffer);
-            if(!clientInputBuffer.hasRemaining()){
-                SelectionKeyUtils.turnOffReadOption(clientKey);
-                if(read_ > 0){
+    public void setInputEvent(boolean isInput){
+        if(isInput) {
+            SelectionKeyUtils.turnOnReadOption(clientKey);
+        }
+        else{
+            SelectionKeyUtils.turnOffReadOption(clientKey);
+        }
+    }
 
-                }
+    public void setOutputEvent(boolean isOutput){
+        if(isOutput) {
+            SelectionKeyUtils.turnOnWriteOption(clientKey);
+        }
+        else{
+            SelectionKeyUtils.turnOffWriteOption(clientKey);
+        }
+    }
+
+    private void readToBuffer(){
+        if(inputBuffer.hasRemaining() || isShutdownInput()){
+            setInputEvent(false);
+            serverHandler.setOutputEvent(true);
+            return;
+        }
+
+        try {
+            inputBuffer.clear();
+            int read_ = clientChannel.read(inputBuffer);
+            inputBuffer.flip();
+            if(read_ == -1){
+                isShutdownInput = true;
+                clientChannel.shutdownInput();
             }
+            serverHandler.setOutputEvent(true);
         }
         catch (IOException e){
             log.error(e);
@@ -208,15 +238,7 @@ public class ClientHandler implements Handler {
         }
     }
 
-    public void readFromBuffer(@NonNull ByteBuffer to){
-
-    }
-
-    public void writeToBuffer(@NonNull ByteBuffer from){
-
-    }
-
-    public void writeFromBuffer(){
+    private void write2client(){
 
     }
 
@@ -256,7 +278,7 @@ public class ClientHandler implements Handler {
         try {
             clientChannel.close();
             if (serverHandler != null) {
-                serverHandler.close();
+                serverHandler.getServerChannel().close();
             }
         } catch (IOException e) {
             log.error(e);

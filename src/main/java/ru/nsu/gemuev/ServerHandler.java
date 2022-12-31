@@ -13,17 +13,19 @@ import java.nio.channels.SocketChannel;
 
 @Log4j2
 public class ServerHandler implements Handler {
+    @Getter
     private final SocketChannel serverChannel;
     private final ClientHandler clientHandler;
-    private final ByteBuffer clientInputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
-    private final ByteBuffer clientOutputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
+    @Getter
+    private ByteBuffer inputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
+    @Getter
+    private ByteBuffer outputBuffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
 
-    public ServerHandler(@NonNull SelectionKey serverKey, @NonNull ClientHandler clientHandler){
+    public ServerHandler(@NonNull SelectionKey serverKey, @NonNull ClientHandler clientHandler) {
         serverChannel = (SocketChannel) serverKey.channel();
         try {
             serverChannel.configureBlocking(false);
-        }
-        catch (IOException e){
+        } catch (IOException e) {
             log.error(e);
             close();
         }
@@ -32,13 +34,8 @@ public class ServerHandler implements Handler {
     }
 
     @Override
-    public void close(){
-        try {
-            clientHandler.close();
-            serverChannel.close();
-        } catch (IOException e) {
-            log.error(e);
-        }
+    public void close() {
+        clientHandler.close();
     }
 
     @Override
@@ -61,9 +58,62 @@ public class ServerHandler implements Handler {
 
     }
 
-    private void readToBuffer(){
-        try {
+    public void setInputEvent(boolean isInput) {
+        if (isInput) {
+            SelectionKeyUtils.turnOnReadOption(clientKey);
+        } else {
+            SelectionKeyUtils.turnOffReadOption(clientKey);
+        }
+    }
 
+    public void setOutputEvent(boolean isOutput) {
+        if (isOutput) {
+            SelectionKeyUtils.turnOnWriteOption(clientKey);
+        } else {
+            SelectionKeyUtils.turnOffWriteOption(clientKey);
+        }
+    }
+
+
+    private void write2server() {
+        ByteBuffer clientBuffer = clientHandler.getInputBuffer();
+        try {
+            if (clientBuffer.hasRemaining()) {
+                serverChannel.write(clientBuffer);
+                if (!clientBuffer.hasRemaining()) {
+                    clientHandler.setInputEvent(true);
+                    setOutputEvent(false);
+                }
+            } else {
+                if (clientHandler.isShutdownInput()) {
+                    serverChannel.shutdownOutput();
+                    setOutputEvent(false);
+                    clientHandler.setInputEvent(false);
+                }
+            }
+        } catch (IOException e) {
+            log.error(e);
+            clientHandler.close();
+        }
+    }
+
+
+    private void readToBuffer() {
+        if(inputBuffer.hasRemaining() || isShutdownInput()){
+            setInputEvent(false);
+            serverHandler.setOutputEvent(true);
+            return;
+        }
+
+        try {
+            inputBuffer.clear();
+            int read_ = clientChannel.read(inputBuffer);
+            inputBuffer.flip();
+            if(read_ == -1){
+                isShutdownInput = true;
+                clientChannel.shutdownInput();
+            }
+            serverHandler.setOutputEvent(true);
         }
         catch (IOException e){
             log.error(e);
@@ -71,15 +121,7 @@ public class ServerHandler implements Handler {
         }
     }
 
-    public void readFromBuffer(@NonNull ByteBuffer to){
-
-    }
-
-    public void writeToBuffer(@NonNull ByteBuffer from){
-
-    }
-
-    public void writeFromBuffer(){
+    public void writeFromBuffer() {
 
     }
 }
