@@ -1,9 +1,8 @@
-package ru.nsu.gemuev;
+package ru.nsu.gemuev.handlers;
 
 import lombok.NonNull;
 import lombok.extern.log4j.Log4j2;
 
-import java.io.IOException;
 import java.nio.channels.SelectionKey;
 
 @Log4j2

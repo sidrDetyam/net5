@@ -1,4 +1,4 @@
-package ru.nsu.gemuev;
+package ru.nsu.gemuev.handlers;
 
 import java.io.Closeable;
 

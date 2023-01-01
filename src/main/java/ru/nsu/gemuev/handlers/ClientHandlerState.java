@@ -1,10 +1,12 @@
-package ru.nsu.gemuev;
+package ru.nsu.gemuev.handlers;
 
-public enum State {
+public enum ClientHandlerState {
     AWAITING_AUTH_REQUEST,
     SENDING_AUTH_RESPONSE,
     AWAITING_CONNECTION_REQUEST,
     RESOLVING,
     SENDING_CONNECTION_RESPONSE,
-    FORWADING
+    FORWARDING,
+    CLOSED,
+    SENDING_SOCKS_ERROR
 }

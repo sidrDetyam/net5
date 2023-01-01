@@ -1,4 +1,4 @@
-package ru.nsu.gemuev;
+package ru.nsu.gemuev.handlers;
 
 import lombok.Getter;
 import lombok.NonNull;
@@ -9,14 +9,16 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 
+import static java.nio.channels.SelectionKey.OP_READ;
+import static java.nio.channels.SelectionKey.OP_WRITE;
+
 @Log4j2
 @Getter
 public abstract class AbstractCouplingHandler implements Handler{
 
     protected AbstractCouplingHandler partner = null;
-    protected final ByteBuffer buffer = ByteBuffer.allocate(Constants.DEF_BUF_SIZE);
-    protected boolean isShutdownInput = false;
-    protected boolean isShutdownOutput = false;
+    protected final ByteBuffer buffer = ByteBuffer.allocate(Socks5Constants.DEF_BUF_SIZE);
+    protected boolean isEndOfInput = false;
     protected final SelectionKey key;
     protected final SocketChannel channel;
 
@@ -26,21 +28,12 @@ public abstract class AbstractCouplingHandler implements Handler{
         channel = (SocketChannel) key.channel();
     }
 
-    public void setInputEvent(boolean isInput){
-        if(isInput) {
-            SelectionKeyUtils.turnOnReadOption(key);
+    public void setUpOptions(int opts, boolean isEnable){
+        if(isEnable){
+            key.interestOpsOr(opts);
         }
         else{
-            SelectionKeyUtils.turnOffReadOption(key);
-        }
-    }
-
-    public void setOutputEvent(boolean isOutput){
-        if(isOutput) {
-            SelectionKeyUtils.turnOnWriteOption(key);
-        }
-        else{
-            SelectionKeyUtils.turnOffWriteOption(key);
+            key.interestOpsAnd(~opts);
         }
     }
 
@@ -58,21 +51,13 @@ public abstract class AbstractCouplingHandler implements Handler{
 
     @Override
     public void accept() {
-        throw new UnsupportedOperationException("bruh");
-    }
-
-    void shutdownInput(){
-        isShutdownInput = true;
-    }
-
-    void shutdownOutput(){
-        isShutdownOutput = true;
+        throw new UnsupportedOperationException("Accept not supported by this handler");
     }
 
     public void readToBuffer(){
         if(buffer.hasRemaining()){
-            setInputEvent(false);
-            partner.setOutputEvent(true);
+            setUpOptions(OP_READ, false);
+            partner.setUpOptions(OP_WRITE, true);
             return;
         }
 
@@ -81,17 +66,16 @@ public abstract class AbstractCouplingHandler implements Handler{
             int read_ = channel.read(buffer);
             buffer.flip();
             if(read_ == -1){
-                shutdownInput();
-                partner.shutdownOutput();
-                setInputEvent(false);
-                partner.setOutputEvent(false);
+                isEndOfInput = true;
+                setUpOptions(OP_READ, false);
+                partner.setUpOptions(OP_WRITE, false);
             }
             else{
-                partner.setOutputEvent(read_ != 0);
-                setInputEvent(read_ == 0);
+                setUpOptions(OP_READ, read_ == 0);
+                partner.setUpOptions(OP_WRITE, read_ != 0);
             }
 
-            if(isShutdownInput() && isShutdownOutput()){
+            if(isEndOfInput() && partner.isEndOfInput()){
                 close();
             }
         }
@@ -108,8 +92,8 @@ public abstract class AbstractCouplingHandler implements Handler{
                 channel.write(partnerBuffer);
             }
             if (!partnerBuffer.hasRemaining()) {
-                partner.setInputEvent(true);
-                setOutputEvent(false);
+                partner.setUpOptions(OP_READ, true);
+                setUpOptions(OP_WRITE, false);
             }
         } catch (IOException e) {
             log.error(e);

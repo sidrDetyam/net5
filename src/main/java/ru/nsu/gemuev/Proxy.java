@@ -3,10 +3,12 @@ package ru.nsu.gemuev;
 import lombok.SneakyThrows;
 import lombok.extern.log4j.Log4j2;
 import org.xbill.DNS.ResolverConfig;
+import ru.nsu.gemuev.handlers.AcceptHandler;
+import ru.nsu.gemuev.handlers.DnsHandler;
+import ru.nsu.gemuev.handlers.Handler;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
